@@ -204,6 +204,18 @@ async def refresh(request: Request):
     return resp
 
 
+def _clear_refresh_cookie(response: Response) -> None:
+    for p in ["/", "/api/auth", ""]:
+        kwargs = {"path": p} if p else {}
+        response.delete_cookie(
+            REFRESH_COOKIE,
+            secure=_COOKIE_SECURE,
+            samesite=_COOKIE_SAMESITE,
+            httponly=True,
+            **kwargs,
+        )
+
+
 @router.post("/logout")
 async def logout(request: Request, user: CurrentUser | None = Depends(get_optional_user)):
     if user:
@@ -213,10 +225,9 @@ async def logout(request: Request, user: CurrentUser | None = Depends(get_option
         except Exception:
             pass
     resp = ok({"ok": True})
-    resp.delete_cookie(REFRESH_COOKIE, path="/")
-    resp.delete_cookie(REFRESH_COOKIE, path="/api/auth")
-    resp.delete_cookie(REFRESH_COOKIE)
+    _clear_refresh_cookie(resp)
     return resp
+
 
 
 
