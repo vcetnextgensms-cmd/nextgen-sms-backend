@@ -92,3 +92,14 @@ async def root():
 async def health():
     return {"data": {"ok": True}}
 
+
+@app.on_event("startup")
+def startup_db_init():
+    try:
+        import database
+        database.init_db()
+        print("[*] Database initialized successfully on startup.")
+    except Exception as e:
+        print(f"[!] Database init error: {e}")
+
+
