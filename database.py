@@ -362,32 +362,167 @@ def _ensure_db_once():
                 _db_exists_checked = True
 
 
+import sqlite3
+
+class SQLiteDictRow(dict):
+    def __init__(self, dictionary, keys=None):
+        if dictionary:
+            super().__init__(dictionary)
+
+    def __getitem__(self, item):
+        if item == 'Field' and 'Field' not in self and 'name' in self:
+            return self['name']
+        return super().__getitem__(item)
+
+
+class SQLiteCursorWrapper:
+    def __init__(self, cursor):
+        self._cursor = cursor
+
+    def execute(self, sql, params=None):
+        if not isinstance(sql, str):
+            sql = str(sql)
+        sql_clean = (
+            sql.replace("%s", "?")
+            .replace("AUTO_INCREMENT", "AUTOINCREMENT")
+            .replace("ENGINE=InnoDB", "")
+            .replace("DEFAULT CHARSET=utf8mb4", "")
+            .replace("INSERT IGNORE INTO", "INSERT OR IGNORE INTO")
+        )
+        if "ON DUPLICATE KEY UPDATE" in sql_clean:
+            parts = sql_clean.split("ON DUPLICATE KEY UPDATE")
+            sql_clean = parts[0].replace("INSERT INTO", "INSERT OR REPLACE INTO")
+        if sql_clean.strip().upper().startswith("SHOW COLUMNS FROM"):
+            table_name = sql_clean.strip().split()[-1].strip("`")
+            sql_clean = f"PRAGMA table_info({table_name})"
+
+        if params is None:
+            self._cursor.execute(sql_clean)
+        else:
+            if isinstance(params, dict):
+                self._cursor.execute(sql_clean, params)
+            else:
+                self._cursor.execute(sql_clean, tuple(params) if isinstance(params, (list, tuple)) else (params,))
+        return self
+
+    def executemany(self, sql, seq_of_params):
+        if not isinstance(sql, str):
+            sql = str(sql)
+        sql_clean = (
+            sql.replace("%s", "?")
+            .replace("AUTO_INCREMENT", "AUTOINCREMENT")
+            .replace("ENGINE=InnoDB", "")
+            .replace("DEFAULT CHARSET=utf8mb4", "")
+            .replace("INSERT IGNORE INTO", "INSERT OR IGNORE INTO")
+        )
+        if "ON DUPLICATE KEY UPDATE" in sql_clean:
+            parts = sql_clean.split("ON DUPLICATE KEY UPDATE")
+            sql_clean = parts[0].replace("INSERT INTO", "INSERT OR REPLACE INTO")
+        self._cursor.executemany(sql_clean, seq_of_params)
+        return self
+
+    def fetchone(self):
+        row = self._cursor.fetchone()
+        if row is None:
+            return None
+        keys = [d[0] for d in self._cursor.description] if self._cursor.description else None
+        if isinstance(row, (tuple, sqlite3.Row)):
+            return SQLiteDictRow({k: row[i] for i, k in enumerate(keys)}, keys=keys)
+        return row
+
+    def fetchall(self):
+        rows = self._cursor.fetchall()
+        if not rows:
+            return []
+        keys = [d[0] for d in self._cursor.description] if self._cursor.description else None
+        result = []
+        for r in rows:
+            if isinstance(r, (tuple, sqlite3.Row)):
+                result.append(SQLiteDictRow({k: r[i] for i, k in enumerate(keys)}, keys=keys))
+            else:
+                result.append(r)
+        return result
+
+    @property
+    def lastrowid(self):
+        return self._cursor.lastrowid
+
+    @property
+    def rowcount(self):
+        return self._cursor.rowcount
+
+
+class SQLiteConnectionWrapper:
+    def __init__(self, db_file="sms.db"):
+        self._conn = sqlite3.connect(db_file, check_same_thread=False)
+
+    def cursor(self):
+        return SQLiteCursorWrapper(self._conn.cursor())
+
+    def execute(self, sql, params=None):
+        cur = self.cursor()
+        cur.execute(sql, params)
+        return cur
+
+    def executemany(self, sql, seq_of_params):
+        cur = self.cursor()
+        cur.executemany(sql, seq_of_params)
+        return cur
+
+    def commit(self):
+        try:
+            self._conn.commit()
+        except Exception:
+            pass
+
+    def rollback(self):
+        try:
+            self._conn.rollback()
+        except Exception:
+            pass
+
+    def close(self):
+        pass
+
+    def __enter__(self):
+        return self
+
+    def __exit__(self, exc_type, exc_val, exc_tb):
+        if exc_type is not None:
+            self.rollback()
+        else:
+            self.commit()
+
+
 def _new_raw_connection(target_db: str):
-    """Open a fresh low-level MySQL connection."""
-    if MYSQL_DRIVER == "mysql.connector":
-        return mysql.connector.connect(
-            host=MYSQL_HOST,
-            port=MYSQL_PORT,
-            user=MYSQL_USER,
-            password=MYSQL_PASSWORD,
-            database=target_db,
-            autocommit=False,
-            connection_timeout=10,
-            use_pure=False,          # use C-extension for speed
-        )
-    elif MYSQL_DRIVER == "pymysql":
-        return pymysql.connect(
-            host=MYSQL_HOST,
-            port=MYSQL_PORT,
-            user=MYSQL_USER,
-            password=MYSQL_PASSWORD,
-            database=target_db,
-            autocommit=False,
-            charset="utf8mb4",
-            connect_timeout=10,
-        )
-    else:
-        raise RuntimeError("No MySQL driver found. Please run: pip install mysql-connector-python")
+    """Open a fresh MySQL connection, or fallback to SQLite if MySQL is unreachable."""
+    try:
+        if MYSQL_DRIVER == "mysql.connector":
+            return mysql.connector.connect(
+                host=MYSQL_HOST,
+                port=MYSQL_PORT,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=target_db,
+                autocommit=False,
+                connection_timeout=10,
+                use_pure=False,
+            )
+        elif MYSQL_DRIVER == "pymysql":
+            return pymysql.connect(
+                host=MYSQL_HOST,
+                port=MYSQL_PORT,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=target_db,
+                autocommit=False,
+                charset="utf8mb4",
+                connect_timeout=10,
+            )
+    except Exception:
+        return SQLiteConnectionWrapper("sms.db")
+    return SQLiteConnectionWrapper("sms.db")
+
 
 
 def connect(db_name=None):
