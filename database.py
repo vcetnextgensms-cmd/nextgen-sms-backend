@@ -112,13 +112,16 @@ class ConnectionWrapper:
         self._conn = raw_conn
 
     def cursor(self):
+        if isinstance(self._conn, SQLiteConnectionWrapper):
+            return self._conn.cursor()
         if MYSQL_DRIVER == "mysql.connector":
             cur = self._conn.cursor(dictionary=True, buffered=True)
         elif MYSQL_DRIVER == "pymysql":
             cur = self._conn.cursor(pymysql.cursors.DictCursor)
         else:
-            raise RuntimeError("No MySQL driver found. Please run: pip install mysql-connector-python")
+            cur = self._conn.cursor()
         return CursorWrapper(cur)
+
 
     def execute(self, sql, params=None):
         cur = self.cursor()
@@ -384,11 +387,16 @@ class SQLiteCursorWrapper:
             sql = str(sql)
         sql_clean = (
             sql.replace("%s", "?")
+            .replace("INT AUTO_INCREMENT", "INTEGER")
+            .replace("INT AUTOINCREMENT", "INTEGER")
             .replace("AUTO_INCREMENT", "AUTOINCREMENT")
+            .replace("ON UPDATE CURRENT_TIMESTAMP", "")
             .replace("ENGINE=InnoDB", "")
             .replace("DEFAULT CHARSET=utf8mb4", "")
             .replace("INSERT IGNORE INTO", "INSERT OR IGNORE INTO")
         )
+
+
         if "ON DUPLICATE KEY UPDATE" in sql_clean:
             parts = sql_clean.split("ON DUPLICATE KEY UPDATE")
             sql_clean = parts[0].replace("INSERT INTO", "INSERT OR REPLACE INTO")
@@ -410,11 +418,16 @@ class SQLiteCursorWrapper:
             sql = str(sql)
         sql_clean = (
             sql.replace("%s", "?")
+            .replace("INT AUTO_INCREMENT", "INTEGER")
+            .replace("INT AUTOINCREMENT", "INTEGER")
             .replace("AUTO_INCREMENT", "AUTOINCREMENT")
+            .replace("ON UPDATE CURRENT_TIMESTAMP", "")
             .replace("ENGINE=InnoDB", "")
             .replace("DEFAULT CHARSET=utf8mb4", "")
             .replace("INSERT IGNORE INTO", "INSERT OR IGNORE INTO")
         )
+
+
         if "ON DUPLICATE KEY UPDATE" in sql_clean:
             parts = sql_clean.split("ON DUPLICATE KEY UPDATE")
             sql_clean = parts[0].replace("INSERT INTO", "INSERT OR REPLACE INTO")
@@ -456,8 +469,9 @@ class SQLiteConnectionWrapper:
     def __init__(self, db_file="sms.db"):
         self._conn = sqlite3.connect(db_file, check_same_thread=False)
 
-    def cursor(self):
+    def cursor(self, *args, **kwargs):
         return SQLiteCursorWrapper(self._conn.cursor())
+
 
     def execute(self, sql, params=None):
         cur = self.cursor()
@@ -743,7 +757,8 @@ def init_db(db_name=None):
         # on `users` -- CREATE TABLE IF NOT EXISTS only affects brand-new
         # tables, so an already-existing MySQL database needs these columns
         # added explicitly. Additive, no data loss, safe to run every startup.
-        existing_user_cols = {row["Field"] for row in c.execute("SHOW COLUMNS FROM users").fetchall()}
+        existing_user_cols = {row["Field"] if "Field" in row else row["name"] for row in c.execute("SHOW COLUMNS FROM users").fetchall()}
+
         if "email" not in existing_user_cols:
             c.execute("ALTER TABLE users ADD COLUMN email VARCHAR(255)")
         if "email_verified" not in existing_user_cols:
