@@ -1,0 +1,13 @@
+fastapi
+uvicorn[standard]
+jinja2
+python-multipart
+itsdangerous
+pillow  # profile photo upload: validate real image content + resize (not hand-rolled, see webapp/photo_upload.py)
+reportlab  # official attendance register PDF generation, see sms_app/services/attendance_pdf.py
+pyserial  # absentee SMS: AT-command send over the USB/serial GSM modem, see webapp/sms_modem.py
+cryptography  # Aadhaar/APAAR field encryption at rest, see field_encryption.py
+mysql-connector-python
+pymysql
+python-dotenv  # loads .env (SMTP_HOST/SMTP_USERNAME/... for OTP email) in run_api.py
+requests  # HTTP client for database.py's proxy path (DB_PROXY_URL) — see db_proxy/

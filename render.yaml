@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: nextgen-sms-backend
+    env: python
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn api.app:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: SMS_ENV
+        value: production
+      - key: SMS_COOKIE_SECURE
+        value: "true"
+      - key: SMS_COOKIE_SAMESITE
+        value: "none"
