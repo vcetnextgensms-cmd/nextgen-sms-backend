@@ -1023,11 +1023,15 @@ def init_db(db_name=None):
             except Exception:
                 pass
 
-        # Seed default admin user
-        defaults=[("admin","admin123","HOD",None,"CSD Head of Department")]
-        for username,password,role,roll,full_name in defaults:
-            if not c.execute("SELECT 1 FROM users WHERE username=%s",(username,)).fetchone():
-                c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)",(username,_hash_password(password),role,roll,full_name))
+        # Seed default admin & faculty users
+        defaults = [
+            ("admin", "admin123", "HOD", None, "CSD Head of Department"),
+            ("faculty_csd", "faculty123", "FACULTY", None, "CSD Faculty Coordinator"),
+        ]
+        for username, password, role, roll, full_name in defaults:
+            if not c.execute("SELECT 1 FROM users WHERE username=%s", (username,)).fetchone():
+                c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)", (username, _hash_password(password), role, roll, full_name))
+
         c.execute("UPDATE users SET department='CSD', designation='Head of Department' WHERE username='admin' AND department IS NULL")
         for row in c.execute("SELECT id,password FROM users").fetchall():
             if not row["password"].startswith("pbkdf2_sha256$"):
