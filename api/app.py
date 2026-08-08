@@ -83,6 +83,12 @@ app.include_router(files_router)          # Group 7 — Protected files
 app.include_router(reports_router)        # Problem Reports
 
 
+@app.get("/")
+async def root():
+    return {"status": "ok", "message": "VCET CSD SMS Backend API is running"}
+
+
 @app.get("/api/health")
 async def health():
     return {"data": {"ok": True}}
+
