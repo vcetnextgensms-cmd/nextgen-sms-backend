@@ -1316,18 +1316,23 @@ def request_otp(email, purpose):
     """Generates and stores a fresh, cryptographically secure 6-digit OTP (valid for 10 minutes),
     invalidating any earlier unused OTP for the same (email, purpose) pair first."""
     import secrets
+    import datetime
 
     if purpose not in ("REGISTER", "RESET_PASSWORD"):
         raise ValueError("Invalid OTP purpose")
     email = email.strip().lower()
     code = f"{secrets.randbelow(900000) + 100000}"
 
+    now = datetime.datetime.now(datetime.timezone.utc)
+    cutoff = (now - datetime.timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
+    expires_at = (now + datetime.timedelta(minutes=OTP_MAX_AGE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
+
     with connect() as c:
         # Rate limit check: Maximum 5 OTP requests per email within 10 minutes
         recent_requests = c.execute(
             """SELECT COUNT(*) AS count FROM email_otps 
-               WHERE email=%s AND purpose=%s AND created_at >= DATE_SUB(UTC_TIMESTAMP(), INTERVAL 10 MINUTE)""",
-            (email, purpose),
+               WHERE email=%s AND purpose=%s AND created_at >= %s""",
+            (email, purpose, cutoff),
         ).fetchone()["count"]
         if recent_requests >= 5:
             raise ValueError("Too many OTP requests for this email. Please wait a few minutes before requesting a new code.")
@@ -1340,8 +1345,8 @@ def request_otp(email, purpose):
         )
         c.execute(
             """INSERT INTO email_otps(email, purpose, code_hash, expires_at)
-               VALUES(%s, %s, %s, DATE_ADD(UTC_TIMESTAMP(), INTERVAL %s MINUTE))""",
-            (email, purpose, _hash_otp(email, purpose, code), OTP_MAX_AGE_MINUTES),
+               VALUES(%s, %s, %s, %s)""",
+            (email, purpose, _hash_otp(email, purpose, code), expires_at),
         )
         audit(c, email, "REQUEST_OTP", purpose.lower(), email)
     return code
@@ -1350,6 +1355,8 @@ def request_otp(email, purpose):
 def verify_otp(email, purpose, code):
     """Checks a submitted code against the latest unused, unexpired OTP for (email, purpose).
     Strictly valid for 10 minutes with max 5 failed attempts allowed."""
+    import datetime
+
     if purpose not in ("REGISTER", "RESET_PASSWORD"):
         raise ValueError("Invalid OTP purpose")
     email = email.strip().lower()
@@ -1366,8 +1373,9 @@ def verify_otp(email, purpose, code):
             c.execute("UPDATE email_otps SET used=1 WHERE id=%s", (row["id"],))
             raise ValueError("Too many incorrect attempts — OTP security locked. Please click 'Resend New OTP'")
 
-        expired = c.execute("SELECT UTC_TIMESTAMP() > %s AS is_expired", (row["expires_at"],)).fetchone()["is_expired"]
-        if expired:
+        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
+        exp_str = str(row["expires_at"])
+        if exp_str < now_str:
             c.execute("UPDATE email_otps SET used=1 WHERE id=%s", (row["id"],))
             raise ValueError("This 6-digit OTP code has expired after 10 minutes. Please click 'Resend New OTP' to receive a fresh code.")
 
@@ -1382,6 +1390,7 @@ def verify_otp(email, purpose, code):
         c.execute("UPDATE email_otps SET used=1 WHERE id=%s", (row["id"],))
         audit(c, email, "VERIFY_OTP", purpose.lower(), email)
         return True
+
 
 
 def mark_email_verified(email):
