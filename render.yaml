@@ -2,8 +2,11 @@ services:
   - type: web
     name: nextgen-sms-backend
     env: python
+    region: singapore
+    plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn api.app:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /api/health
     envVars:
       - key: SMS_ENV
         value: production
@@ -11,3 +14,7 @@ services:
         value: "true"
       - key: SMS_COOKIE_SAMESITE
         value: "none"
+      - key: SMS_SECRET_KEY
+        generateValue: true
+      - key: ALLOWED_ORIGINS
+        value: ""
