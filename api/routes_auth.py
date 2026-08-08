@@ -382,7 +382,8 @@ async def send_otp(body: SendOtpBody, request: Request):
     except Exception as exc:
         print(f"[OTP Error] Failed to send email via SMTP ({exc}).")
         record_failure(limiter_key)
-        raise ApiError("Could not send verification email. Please verify SMTP_USERNAME and SMTP_PASSWORD (16-char Gmail App Password) in .env.", status_code=502, code="EMAIL_SEND_FAILED") from exc
+        raise ApiError(f"Could not send verification email ({exc}). Please verify SMTP settings.", status_code=502, code="EMAIL_SEND_FAILED") from exc
+
 
     record_success(limiter_key)
     return ok({"message": "Verification code sent to your email. It expires in 10 minutes."})
