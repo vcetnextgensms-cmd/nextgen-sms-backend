@@ -84,7 +84,11 @@ def send_email(to_email: str, subject: str, body_text: str) -> None:
     if resend_key:
         import json, urllib.request
         url = "https://api.resend.com/emails"
-        headers = {"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {resend_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NextGenSMS/1.0",
+        }
         payload = {
             "from": f"{cfg['from_name']} <onboarding@resend.dev>",
             "to": [to_email],
@@ -100,7 +104,12 @@ def send_email(to_email: str, subject: str, body_text: str) -> None:
     if brevo_key:
         import json, urllib.request
         url = "https://api.brevo.com/v3/smtp/email"
-        headers = {"api-key": brevo_key, "Content-Type": "application/json", "Accept": "application/json"}
+        headers = {
+            "api-key": brevo_key,
+            "Content-Type": "application/json",
+            "Accept": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NextGenSMS/1.0",
+        }
         payload = {
             "sender": {"name": cfg["from_name"], "email": cfg["from_email"]},
             "to": [{"email": to_email}],
@@ -116,7 +125,12 @@ def send_email(to_email: str, subject: str, body_text: str) -> None:
     if sendgrid_key:
         import json, urllib.request
         url = "https://api.sendgrid.com/v3/mail/send"
-        headers = {"Authorization": f"Bearer {sendgrid_key}", "Content-Type": "application/json"}
+        headers = {
+            "Authorization": f"Bearer {sendgrid_key}",
+            "Content-Type": "application/json",
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) NextGenSMS/1.0",
+        }
+
         payload = {
             "personalizations": [{"to": [{"email": to_email}]}],
             "from": {"email": cfg["from_email"], "name": cfg["from_name"]},
