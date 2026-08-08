@@ -93,3 +93,20 @@ def get_current_user_allow_pending(
         student_roll_no=data.get("student_roll_no"),
         must_change_password=bool(data.get("must_change_password")),
     )
+
+
+def get_optional_user(
+    authorization: str | None = Header(default=None),
+    token: str | None = Query(default=None),
+    sms_refresh: str | None = Cookie(default=None, alias=REFRESH_COOKIE),
+) -> CurrentUser | None:
+    data = _extract_user_payload(authorization, token, sms_refresh)
+    if not data:
+        return None
+    return CurrentUser(
+        username=data["username"],
+        role=data["role"],
+        student_roll_no=data.get("student_roll_no"),
+        must_change_password=bool(data.get("must_change_password")),
+    )
+

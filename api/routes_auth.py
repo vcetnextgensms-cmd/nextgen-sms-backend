@@ -33,8 +33,9 @@ from api.auth_token import (
     REFRESH_COOKIE, REFRESH_MAX_AGE,
     make_access_token, make_refresh_token, read_refresh_token,
 )
-from api.deps import CurrentUser, get_current_user_allow_pending
+from api.deps import CurrentUser, get_current_user_allow_pending, get_optional_user
 from api.envelope import ApiError, ok
+
 from api.rate_limit import is_locked, record_failure, record_success
 
 router = APIRouter(prefix="/api/auth", tags=["auth"])
@@ -204,14 +205,19 @@ async def refresh(request: Request):
 
 
 @router.post("/logout")
-async def logout(request: Request, user: CurrentUser = Depends(get_current_user_allow_pending)):
-    with connect() as c:
-        audit(c, user.username, "LOGOUT", "session", "")
+async def logout(request: Request, user: CurrentUser | None = Depends(get_optional_user)):
+    if user:
+        try:
+            with connect() as c:
+                audit(c, user.username, "LOGOUT", "session", "")
+        except Exception:
+            pass
     resp = ok({"ok": True})
     resp.delete_cookie(REFRESH_COOKIE, path="/")
     resp.delete_cookie(REFRESH_COOKIE, path="/api/auth")
     resp.delete_cookie(REFRESH_COOKIE)
     return resp
+
 
 
 @router.get("/me")
