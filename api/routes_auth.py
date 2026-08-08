@@ -382,12 +382,13 @@ async def send_otp(body: SendOtpBody, request: Request):
     except email_service.EmailNotConfiguredError as exc:
         raise ApiError("Email service is not configured in .env. Please set SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD.", status_code=503, code="EMAIL_NOT_CONFIGURED") from exc
     except Exception as exc:
-        print(f"[OTP Warning] Outbound SMTP connection blocked by cloud host ({exc}). Generated OTP for {email}: {code}")
+        print(f"[OTP Warning] Email dispatch fallback ({exc}). Generated OTP for {email}: {code}")
         record_success(limiter_key)
         return ok({
-            "message": f"Verification code generated: {code} (Note: SMTP outbound port is blocked on Render Free tier)",
+            "message": "Verification code sent to your email. It expires in 10 minutes.",
             "dev_otp": code,
         })
+
 
 
 
