@@ -384,10 +384,8 @@ async def send_otp(body: SendOtpBody, request: Request):
     except Exception as exc:
         print(f"[OTP Warning] Email dispatch fallback ({exc}). Generated OTP for {email}: {code}")
         record_success(limiter_key)
-        return ok({
-            "message": "Verification code sent to your email. It expires in 10 minutes.",
-            "dev_otp": code,
-        })
+        return ok({"message": "Verification code sent to your email. It expires in 10 minutes."})
+
 
 
 
