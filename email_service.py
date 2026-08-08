@@ -15,14 +15,26 @@ from __future__ import annotations
 
 import os
 import smtplib
+import socket
 import ssl
 from email.message import EmailMessage
+
+# Force IPv4 socket resolution for SMTP hosts to prevent [Errno 101] Network is unreachable on cloud hosts
+_orig_getaddrinfo = socket.getaddrinfo
+
+def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
+    if isinstance(host, str) and ("gmail" in host.lower() or "smtp" in host.lower()):
+        family = socket.AF_INET
+    return _orig_getaddrinfo(host, port, family, type, proto, flags)
+
+socket.getaddrinfo = _ipv4_only_getaddrinfo
 
 try:
     from dotenv import load_dotenv
     load_dotenv()
 except ImportError:
     pass
+
 
 
 def get_smtp_config():
