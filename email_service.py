@@ -76,11 +76,63 @@ def is_configured() -> bool:
 
 
 def send_email(to_email: str, subject: str, body_text: str) -> None:
+    resend_key = os.environ.get("RESEND_API_KEY", "").strip()
+    brevo_key = os.environ.get("BREVO_API_KEY", "").strip()
+    sendgrid_key = os.environ.get("SENDGRID_API_KEY", "").strip()
     cfg = get_smtp_config()
+
+    if resend_key:
+        import json, urllib.request
+        url = "https://api.resend.com/emails"
+        headers = {"Authorization": f"Bearer {resend_key}", "Content-Type": "application/json"}
+        payload = {
+            "from": f"{cfg['from_name']} <onboarding@resend.dev>",
+            "to": [to_email],
+            "subject": subject,
+            "text": body_text,
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status not in (200, 201):
+                raise RuntimeError(f"Resend API error status {resp.status}")
+        return
+
+    if brevo_key:
+        import json, urllib.request
+        url = "https://api.brevo.com/v3/smtp/email"
+        headers = {"api-key": brevo_key, "Content-Type": "application/json", "Accept": "application/json"}
+        payload = {
+            "sender": {"name": cfg["from_name"], "email": cfg["from_email"]},
+            "to": [{"email": to_email}],
+            "subject": subject,
+            "textContent": body_text,
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status not in (200, 201):
+                raise RuntimeError(f"Brevo API error status {resp.status}")
+        return
+
+    if sendgrid_key:
+        import json, urllib.request
+        url = "https://api.sendgrid.com/v3/mail/send"
+        headers = {"Authorization": f"Bearer {sendgrid_key}", "Content-Type": "application/json"}
+        payload = {
+            "personalizations": [{"to": [{"email": to_email}]}],
+            "from": {"email": cfg["from_email"], "name": cfg["from_name"]},
+            "subject": subject,
+            "content": [{"type": "text/plain", "value": body_text}],
+        }
+        req = urllib.request.Request(url, data=json.dumps(payload).encode("utf-8"), headers=headers, method="POST")
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            if resp.status not in (200, 202):
+                raise RuntimeError(f"SendGrid API error status {resp.status}")
+        return
+
     if not bool(cfg["host"] and cfg["username"] and cfg["password"]):
         raise EmailNotConfiguredError(
             "Email sending is not configured on this server. "
-            "Set SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD (see .env)."
+            "Set SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD (or RESEND_API_KEY / BREVO_API_KEY)."
         )
 
     msg = EmailMessage()
@@ -101,6 +153,7 @@ def send_email(to_email: str, subject: str, body_text: str) -> None:
                 server.starttls(context=context)
             server.login(cfg["username"], cfg["password"])
             server.send_message(msg)
+
 
 
 def send_otp_email(to_email: str, code: str, purpose: str) -> None:
