@@ -87,15 +87,18 @@ async def update_account(body: AccountUpdateBody, user: CurrentUser = Depends(ge
         validate_staff_profile(data)
     except ValueError as e:
         raise ApiError(str(e), 400, "VALIDATION_ERROR")
-    with connect() as c:
-        c.execute(
-            """UPDATE users SET full_name=?, department=?, designation=?, employee_id=?,
-               email=?, phone=?, qualification=?, date_of_joining=? WHERE username=?""",
-            (data["full_name"], data["department"], data["designation"], data["employee_id"],
-             data["email"], data["phone"], data["qualification"], data["date_of_joining"],
-             user.username),
-        )
-        audit(c, user.username, "UPDATE", "user", f"{user.username} (self-edit profile)")
+    try:
+        with connect() as c:
+            c.execute(
+                """UPDATE users SET full_name=?, department=?, designation=?, employee_id=?,
+                   email=NULLIF(?,''), phone=?, qualification=?, date_of_joining=? WHERE username=?""",
+                (data["full_name"], data["department"], data["designation"], data["employee_id"],
+                 data["email"], data["phone"], data["qualification"], data["date_of_joining"],
+                 user.username),
+            )
+            audit(c, user.username, "UPDATE", "user", f"{user.username} (self-edit profile)")
+    except IntegrityError:
+        raise ApiError("That email address is already registered to another account", 400, "VALIDATION_ERROR")
     with connect() as c:
         row = c.execute("SELECT * FROM users WHERE username=?", (user.username,)).fetchone()
     return ok({"user": dict(row)})
