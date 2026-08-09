@@ -146,63 +146,67 @@ async def student_view(student_id: int, user: CurrentUser = Depends(get_current_
     return ok({"student": student, "semester": semester})
 
 
+def _clean_str(val: str | None) -> str:
+    return (val or "").strip()
+
+
 class StudentBody(BaseModel):
-    roll_no: str = ""
-    name: str = ""
-    father_name: str = ""
-    email: str = ""
-    phone: str = ""
-    parent_phone: str = ""
-    dob: str = ""
-    category: str = ""
-    gender: str = ""
-    seat_category: str = ""
-    apaar_id: str = ""
-    aadhaar_number: str = ""
-    certificates_submitted: str = ""
-    certificates_due: str = ""
-    consultant_name: str = ""
-    address: str = ""
-    tenth_school: str = ""
-    tenth_year: str = ""
-    tenth_marks: str = ""
-    twelfth_school: str = ""
-    twelfth_year: str = ""
-    twelfth_marks: str = ""
-    diploma_college: str = ""
-    diploma_year: str = ""
-    diploma_marks: str = ""
+    roll_no: str | None = ""
+    name: str | None = ""
+    father_name: str | None = ""
+    email: str | None = ""
+    phone: str | None = ""
+    parent_phone: str | None = ""
+    dob: str | None = ""
+    category: str | None = ""
+    gender: str | None = ""
+    seat_category: str | None = ""
+    apaar_id: str | None = ""
+    aadhaar_number: str | None = ""
+    certificates_submitted: str | None = ""
+    certificates_due: str | None = ""
+    consultant_name: str | None = ""
+    address: str | None = ""
+    tenth_school: str | None = ""
+    tenth_year: str | None = ""
+    tenth_marks: str | None = ""
+    twelfth_school: str | None = ""
+    twelfth_year: str | None = ""
+    twelfth_marks: str | None = ""
+    diploma_college: str | None = ""
+    diploma_year: str | None = ""
+    diploma_marks: str | None = ""
     current_semester_id: int | None = None
 
 
 def _body_to_data(body: StudentBody) -> dict:
     return {
-        "roll_no": body.roll_no.strip(),
-        "name": body.name.strip(),
+        "roll_no": _clean_str(body.roll_no),
+        "name": _clean_str(body.name),
         "department": "CSD",
-        "email": body.email.strip(),
-        "phone": body.phone.strip(),
-        "parent_phone": body.parent_phone.strip(),
-        "dob": body.dob.strip(),
-        "address": body.address.strip(),
-        "father_name": body.father_name.strip(),
-        "category": body.category.strip(),
-        "gender": body.gender.strip(),
-        "seat_category": body.seat_category.strip(),
-        "apaar_id": body.apaar_id.strip(),
-        "aadhaar_number": body.aadhaar_number.strip(),
-        "certificates_submitted": body.certificates_submitted.strip(),
-        "certificates_due": body.certificates_due.strip(),
-        "consultant_name": body.consultant_name.strip(),
-        "tenth_school": body.tenth_school.strip(),
-        "tenth_year": body.tenth_year.strip(),
-        "tenth_marks": body.tenth_marks.strip(),
-        "twelfth_school": body.twelfth_school.strip(),
-        "twelfth_year": body.twelfth_year.strip(),
-        "twelfth_marks": body.twelfth_marks.strip(),
-        "diploma_college": body.diploma_college.strip(),
-        "diploma_year": body.diploma_year.strip(),
-        "diploma_marks": body.diploma_marks.strip(),
+        "email": _clean_str(body.email),
+        "phone": _clean_str(body.phone),
+        "parent_phone": _clean_str(body.parent_phone),
+        "dob": _clean_str(body.dob),
+        "address": _clean_str(body.address),
+        "father_name": _clean_str(body.father_name),
+        "category": _clean_str(body.category),
+        "gender": _clean_str(body.gender),
+        "seat_category": _clean_str(body.seat_category),
+        "apaar_id": _clean_str(body.apaar_id),
+        "aadhaar_number": _clean_str(body.aadhaar_number),
+        "certificates_submitted": _clean_str(body.certificates_submitted),
+        "certificates_due": _clean_str(body.certificates_due),
+        "consultant_name": _clean_str(body.consultant_name),
+        "tenth_school": _clean_str(body.tenth_school),
+        "tenth_year": _clean_str(body.tenth_year),
+        "tenth_marks": _clean_str(body.tenth_marks),
+        "twelfth_school": _clean_str(body.twelfth_school),
+        "twelfth_year": _clean_str(body.twelfth_year),
+        "twelfth_marks": _clean_str(body.twelfth_marks),
+        "diploma_college": _clean_str(body.diploma_college),
+        "diploma_year": _clean_str(body.diploma_year),
+        "diploma_marks": _clean_str(body.diploma_marks),
     }
 
 
@@ -243,7 +247,7 @@ async def student_create(body: StudentBody, user: CurrentUser = Depends(get_curr
             for item, st in [("Personal details", "Complete"), ("Documents", "Pending"),
                               ("ID card", "Pending"), ("Fees", "Pending"),
                               ("Attendance records", "Available"), ("Marks records", "Available")]:
-                c.execute("INSERT OR IGNORE INTO checklist(roll_no,item,status) VALUES(?,?,?)",
+                c.execute("INSERT IGNORE INTO checklist(roll_no,item,status) VALUES(?,?,?)",
                           (data["roll_no"], item, st))
             new_id = c.execute("SELECT id FROM students WHERE roll_no=?", (data["roll_no"],)).fetchone()["id"]
         username, password = ensure_student_login(data["roll_no"], user.username)

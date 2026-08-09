@@ -101,10 +101,10 @@ async def save_account_permissions(username: str, body: UserPermissionUpdateBody
 
 class CreateAccountBody(BaseModel):
     username: str
-    full_name: str = ""
+    full_name: str | None = ""
     password: str
     role: str
-    student_roll_no: str = ""
+    student_roll_no: str | None = ""
 
 
 @router.post("/create-account", status_code=201)
@@ -113,7 +113,7 @@ async def create_account(body: CreateAccountBody, user: CurrentUser = Depends(ge
     try:
         create_user(
             body.username, body.password, body.role,
-            body.full_name, body.student_roll_no.strip() or None,
+            (body.full_name or "").strip(), (body.student_roll_no or "").strip() or None,
             user.username,
         )
         with connect() as c:

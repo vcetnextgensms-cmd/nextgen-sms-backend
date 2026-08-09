@@ -54,15 +54,19 @@ async def my_account(user: CurrentUser = Depends(get_current_user)):
     })
 
 
+def _clean_str(val: str | None) -> str:
+    return (val or "").strip()
+
+
 class AccountUpdateBody(BaseModel):
-    full_name: str = ""
-    department: str = ""
-    designation: str = ""
-    employee_id: str = ""
-    email: str = ""
-    phone: str = ""
-    qualification: str = ""
-    date_of_joining: str = ""
+    full_name: str | None = ""
+    department: str | None = ""
+    designation: str | None = ""
+    employee_id: str | None = ""
+    email: str | None = ""
+    phone: str | None = ""
+    qualification: str | None = ""
+    date_of_joining: str | None = ""
 
 
 @router.patch("/account")
@@ -70,14 +74,14 @@ async def update_account(body: AccountUpdateBody, user: CurrentUser = Depends(ge
     if user.role not in ("HOD", "FACULTY"):
         raise ApiError("This route is for HOD and FACULTY only", 403, "FORBIDDEN")
     data = {
-        "full_name": body.full_name.strip(),
-        "department": body.department.strip(),
-        "designation": body.designation.strip(),
-        "employee_id": body.employee_id.strip(),
-        "email": body.email.strip(),
-        "phone": body.phone.strip(),
-        "qualification": body.qualification.strip(),
-        "date_of_joining": body.date_of_joining.strip(),
+        "full_name": _clean_str(body.full_name),
+        "department": _clean_str(body.department),
+        "designation": _clean_str(body.designation),
+        "employee_id": _clean_str(body.employee_id),
+        "email": _clean_str(body.email),
+        "phone": _clean_str(body.phone),
+        "qualification": _clean_str(body.qualification),
+        "date_of_joining": _clean_str(body.date_of_joining),
     }
     try:
         validate_staff_profile(data)
@@ -174,16 +178,16 @@ async def my_profile(user: CurrentUser = Depends(get_current_user)):
 
 
 class ProfileUpdateBody(BaseModel):
-    name: str = ""
-    father_name: str = ""
-    email: str = ""
-    phone: str = ""
-    parent_phone: str = ""
-    dob: str = ""
-    category: str = ""
-    gender: str = ""
-    seat_category: str = ""
-    address: str = ""
+    name: str | None = ""
+    father_name: str | None = ""
+    email: str | None = ""
+    phone: str | None = ""
+    parent_phone: str | None = ""
+    dob: str | None = ""
+    category: str | None = ""
+    gender: str | None = ""
+    seat_category: str | None = ""
+    address: str | None = ""
 
 
 @router.patch("/profile")
@@ -194,16 +198,16 @@ async def update_profile(body: ProfileUpdateBody, user: CurrentUser = Depends(ge
     if not row:
         raise ApiError("Student record not found", 404, "STUDENT_NOT_FOUND")
     data = {
-        "name": body.name.strip(),
-        "father_name": body.father_name.strip(),
-        "email": body.email.strip(),
-        "phone": body.phone.strip(),
-        "parent_phone": body.parent_phone.strip(),
-        "dob": body.dob.strip(),
-        "category": body.category.strip(),
-        "gender": body.gender.strip(),
-        "seat_category": body.seat_category.strip(),
-        "address": body.address.strip(),
+        "name": _clean_str(body.name),
+        "father_name": _clean_str(body.father_name),
+        "email": _clean_str(body.email),
+        "phone": _clean_str(body.phone),
+        "parent_phone": _clean_str(body.parent_phone),
+        "dob": _clean_str(body.dob),
+        "category": _clean_str(body.category),
+        "gender": _clean_str(body.gender),
+        "seat_category": _clean_str(body.seat_category),
+        "address": _clean_str(body.address),
         # roll_no and department are NOT student-editable — inject from existing row
         "roll_no": row["roll_no"],
         "department": row["department"],
