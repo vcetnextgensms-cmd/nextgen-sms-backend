@@ -1116,9 +1116,20 @@ def get_conn():
 
 
 def auth(username, password):
+    u = username.strip()
     with connect() as c:
-        row=c.execute("SELECT * FROM users WHERE username=%s AND active=1",(username.strip(),)).fetchone()
-        return row if row and _verify_password(password,row["password"]) else None
+        row = c.execute(
+            """SELECT * FROM users 
+               WHERE (username = %s 
+                      OR (email IS NOT NULL AND email != '' AND email = %s)
+                      OR (student_roll_no IS NOT NULL AND student_roll_no != '' AND student_roll_no = %s)
+                      OR LOWER(full_name) = LOWER(%s)
+                      OR (full_name LIKE %s AND LENGTH(%s) >= 3))
+               AND active = 1 
+               LIMIT 1""",
+            (u, u, u, u, f"%{u}%", u),
+        ).fetchone()
+        return row if row and _verify_password(password, row["password"]) else None
 
 
 def change_password(username, old_password, new_password):
