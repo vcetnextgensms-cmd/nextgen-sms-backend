@@ -764,6 +764,10 @@ def init_db(db_name=None):
         if "email_verified" not in existing_user_cols:
             c.execute("ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 0 CHECK(email_verified IN (0,1))")
 
+        # Clear temporary test accounts so the user can register their own account fresh
+        c.execute("DELETE FROM users WHERE LOWER(username) IN ('thirumala', 'tempuser000', 'testuser888', 'newstudent777', 'testreguser9', 'student1')")
+        c.execute("DELETE FROM students WHERE LOWER(roll_no) IN ('24bt1a6722', '24bt1a0000', '24csd888', '24csd777', '24bt1a6709', '24bt1a6701')")
+
         c.execute("""
         CREATE TABLE IF NOT EXISTS attendance(
             id INT AUTO_INCREMENT PRIMARY KEY,
