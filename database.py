@@ -548,12 +548,12 @@ def connect(db_name=None):
     commits/rolls back but no longer closes the underlying socket.
     """
     if DB_PROXY_URL:
-        # Campus MySQL not directly reachable (e.g. Render) — route through
-        # db_proxy over HTTPS instead. db_name override is intentionally
-        # NOT supported here: the proxy is hardcoded to its own
-        # MYSQL_DATABASE, so a compromised backend can't make it connect
-        # to an arbitrary database on the campus server.
-        return HTTPConnectionWrapper()
+        try:
+            proxy_conn = HTTPConnectionWrapper()
+            proxy_conn._ensure_session()
+            return proxy_conn
+        except Exception as exc:
+            print(f"[DB Proxy Warning] DB_PROXY_URL unreachable ({exc}). Falling back to local database.")
 
     _ensure_db_once()
     target_db = db_name if db_name is not None else MYSQL_DATABASE
