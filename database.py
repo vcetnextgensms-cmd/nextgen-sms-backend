@@ -1076,6 +1076,7 @@ def init_db(db_name=None):
             ("faculty_csd", "faculty123", "FACULTY", None, "CSD Faculty Coordinator"),
             ("Naveen", "naveen@786", "FACULTY", None, "N NAVEEN KUMAR"),
             ("Divya", "divya@11", "FACULTY", None, "Divya"),
+            ("Srikanth", "srikanth@123", "FACULTY", None, "Srikanth"),
         ]
         for username, password, role, roll, full_name in defaults:
             if not c.execute("SELECT 1 FROM users WHERE username=%s", (username,)).fetchone():
@@ -1084,6 +1085,8 @@ def init_db(db_name=None):
                 c.execute("UPDATE users SET password=%s WHERE username='Naveen'", (_hash_password("naveen@786"),))
             elif username == "Divya":
                 c.execute("UPDATE users SET password=%s WHERE username='Divya'", (_hash_password("divya@11"),))
+            elif username == "Srikanth":
+                c.execute("UPDATE users SET password=%s WHERE username='Srikanth'", (_hash_password("srikanth@123"),))
         c.execute("UPDATE users SET password=%s WHERE username='faculty1'", (_hash_password("naveen@786"),))
 
         _restore_custom_users(c)

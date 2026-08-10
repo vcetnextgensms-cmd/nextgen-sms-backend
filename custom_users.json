@@ -12,5 +12,12 @@
     "role": "FACULTY",
     "full_name": "Divya",
     "student_roll_no": null
+  },
+  {
+    "username": "Srikanth",
+    "password": "pbkdf2_sha256$200000$a68dff9cf76436a86b88292e4b4cb563$0566617cc4a627d20dc582e0a03dc92cd210b280b37917e9855b9c8f14084b81",
+    "role": "FACULTY",
+    "full_name": "Srikanth",
+    "student_roll_no": null
   }
 ]
