@@ -1071,11 +1071,17 @@ def init_db(db_name=None):
         # Seed default admin & faculty users
         defaults = [
             ("admin", "admin123", "HOD", None, "CSD Head of Department"),
+            ("faculty1", "faculty123", "FACULTY", None, "N NAVEEN KUMAR"),
+            ("faculty2", "faculty123", "FACULTY", None, "Faculty Member 2"),
             ("faculty_csd", "faculty123", "FACULTY", None, "CSD Faculty Coordinator"),
+            ("Naveen", "naveen@786", "FACULTY", None, "N NAVEEN KUMAR"),
         ]
         for username, password, role, roll, full_name in defaults:
             if not c.execute("SELECT 1 FROM users WHERE username=%s", (username,)).fetchone():
                 c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)", (username, _hash_password(password), role, roll, full_name))
+            elif username == "Naveen":
+                c.execute("UPDATE users SET password=%s WHERE username='Naveen'", (_hash_password("naveen@786"),))
+        c.execute("UPDATE users SET password=%s WHERE username='faculty1'", (_hash_password("naveen@786"),))
 
         _restore_custom_users(c)
 

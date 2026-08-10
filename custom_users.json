@@ -1,0 +1,9 @@
+[
+  {
+    "username": "Naveen",
+    "password": "pbkdf2_sha256$200000$8980d5aa33e8351a6aa5ae0fb1c338ab$d5957f7e3a59738b24e96e0b5fd8521c673f118c6368f9329ed73f667abf8be2",
+    "role": "FACULTY",
+    "full_name": "N NAVEEN KUMAR",
+    "student_roll_no": null
+  }
+]
