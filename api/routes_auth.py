@@ -378,17 +378,16 @@ async def send_otp(body: SendOtpBody, request: Request):
     try:
         email_service.send_otp_email(email, code, purpose)
         print(f"[OTP] Real OTP email sent for {purpose} to {email}")
-        record_success(limiter_key)
-        return ok({"message": "Verification code sent to your email. It expires in 10 minutes."})
     except email_service.EmailNotConfiguredError as exc:
         raise ApiError("Email service is not configured in .env. Please set SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD.", status_code=503, code="EMAIL_NOT_CONFIGURED") from exc
     except Exception as exc:
-        print(f"[OTP Warning] Email dispatch fallback ({exc}). Generated OTP for {email}: {code}")
-        record_success(limiter_key)
-        return ok({"message": "Verification code sent to your email. It expires in 10 minutes."})
+        print(f"[OTP Error] Failed to send email via SMTP ({exc}).")
+        record_failure(limiter_key)
+        raise ApiError(f"Could not send verification email ({exc}). Please verify SMTP settings.", status_code=502, code="EMAIL_SEND_FAILED") from exc
 
 
-
+    record_success(limiter_key)
+    return ok({"message": "Verification code sent to your email. It expires in 10 minutes."})
 
 
 @router.post("/verify-otp")

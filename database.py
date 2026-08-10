@@ -508,78 +508,33 @@ class SQLiteConnectionWrapper:
             self.commit()
 
 
-import json
-
-CUSTOM_USERS_FILE = Path(__file__).parent / "custom_users.json"
-
-
-def _save_custom_user_backup(username: str, password_hash: str, role: str, full_name: str = "", student_roll_no: str | None = None):
-    users = []
-    if CUSTOM_USERS_FILE.exists():
-        try:
-            with open(CUSTOM_USERS_FILE, "r", encoding="utf-8") as f:
-                users = json.load(f)
-        except Exception:
-            users = []
-    users = [u for u in users if u.get("username") != username]
-    users.append({
-        "username": username,
-        "password": password_hash,
-        "role": role,
-        "full_name": full_name,
-        "student_roll_no": student_roll_no,
-    })
-    try:
-        with open(CUSTOM_USERS_FILE, "w", encoding="utf-8") as f:
-            json.dump(users, f, indent=2)
-    except Exception:
-        pass
-
-
-def _restore_custom_users(c):
-    if not CUSTOM_USERS_FILE.exists():
-        return
-    try:
-        with open(CUSTOM_USERS_FILE, "r", encoding="utf-8") as f:
-            users = json.load(f)
-        for u in users:
-            if not c.execute("SELECT 1 FROM users WHERE username=%s", (u["username"],)).fetchone():
-                c.execute(
-                    "INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)",
-                    (u["username"], u["password"], u["role"], u.get("student_roll_no"), u.get("full_name", "")),
-                )
-    except Exception as e:
-        print(f"[DATABASE RECOVERY] Warning restoring custom users: {e}")
-
-
 def _new_raw_connection(target_db: str):
     """Open a fresh MySQL connection, or fallback to SQLite if MySQL is unreachable."""
-    if MYSQL_DRIVER:
-        try:
-            if MYSQL_DRIVER == "mysql.connector":
-                return mysql.connector.connect(
-                    host=MYSQL_HOST,
-                    port=MYSQL_PORT,
-                    user=MYSQL_USER,
-                    password=MYSQL_PASSWORD,
-                    database=target_db,
-                    autocommit=False,
-                    connection_timeout=10,
-                    use_pure=False,
-                )
-            elif MYSQL_DRIVER == "pymysql":
-                return pymysql.connect(
-                    host=MYSQL_HOST,
-                    port=MYSQL_PORT,
-                    user=MYSQL_USER,
-                    password=MYSQL_PASSWORD,
-                    database=target_db,
-                    autocommit=False,
-                    charset="utf8mb4",
-                    connect_timeout=10,
-                )
-        except Exception:
-            pass
+    try:
+        if MYSQL_DRIVER == "mysql.connector":
+            return mysql.connector.connect(
+                host=MYSQL_HOST,
+                port=MYSQL_PORT,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=target_db,
+                autocommit=True,
+                connection_timeout=10,
+                use_pure=False,
+            )
+        elif MYSQL_DRIVER == "pymysql":
+            return pymysql.connect(
+                host=MYSQL_HOST,
+                port=MYSQL_PORT,
+                user=MYSQL_USER,
+                password=MYSQL_PASSWORD,
+                database=target_db,
+                autocommit=True,
+                charset="utf8mb4",
+                connect_timeout=10,
+            )
+    except Exception:
+        return SQLiteConnectionWrapper("sms.db")
     return SQLiteConnectionWrapper("sms.db")
 
 
@@ -1068,29 +1023,11 @@ def init_db(db_name=None):
             except Exception:
                 pass
 
-        # Seed default admin & faculty users
-        defaults = [
-            ("admin", "admin123", "HOD", None, "CSD Head of Department"),
-            ("faculty1", "faculty123", "FACULTY", None, "N NAVEEN KUMAR"),
-            ("faculty2", "faculty123", "FACULTY", None, "Faculty Member 2"),
-            ("faculty_csd", "faculty123", "FACULTY", None, "CSD Faculty Coordinator"),
-            ("Naveen", "naveen@786", "FACULTY", None, "N NAVEEN KUMAR"),
-            ("Divya", "divya@11", "FACULTY", None, "Divya"),
-            ("Srikanth", "srikanth@123", "FACULTY", None, "Srikanth"),
-        ]
-        for username, password, role, roll, full_name in defaults:
-            if not c.execute("SELECT 1 FROM users WHERE username=%s", (username,)).fetchone():
-                c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)", (username, _hash_password(password), role, roll, full_name))
-            elif username == "Naveen":
-                c.execute("UPDATE users SET password=%s WHERE username='Naveen'", (_hash_password("naveen@786"),))
-            elif username == "Divya":
-                c.execute("UPDATE users SET password=%s WHERE username='Divya'", (_hash_password("divya@11"),))
-            elif username == "Srikanth":
-                c.execute("UPDATE users SET password=%s WHERE username='Srikanth'", (_hash_password("srikanth@123"),))
-        c.execute("UPDATE users SET password=%s WHERE username='faculty1'", (_hash_password("naveen@786"),))
-
-        _restore_custom_users(c)
-
+        # Seed default admin user
+        defaults=[("admin","admin123","HOD",None,"CSD Head of Department")]
+        for username,password,role,roll,full_name in defaults:
+            if not c.execute("SELECT 1 FROM users WHERE username=%s",(username,)).fetchone():
+                c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)",(username,_hash_password(password),role,roll,full_name))
         c.execute("UPDATE users SET department='CSD', designation='Head of Department' WHERE username='admin' AND department IS NULL")
         for row in c.execute("SELECT id,password FROM users").fetchall():
             if not row["password"].startswith("pbkdf2_sha256$"):
@@ -1175,20 +1112,9 @@ def get_conn():
 
 
 def auth(username, password):
-    u = username.strip()
     with connect() as c:
-        row = c.execute(
-            """SELECT * FROM users 
-               WHERE (username = %s 
-                      OR (email IS NOT NULL AND email != '' AND email = %s)
-                      OR (student_roll_no IS NOT NULL AND student_roll_no != '' AND student_roll_no = %s)
-                      OR LOWER(full_name) = LOWER(%s)
-                      OR (full_name LIKE %s AND LENGTH(%s) >= 3))
-               AND active = 1 
-               LIMIT 1""",
-            (u, u, u, u, f"%{u}%", u),
-        ).fetchone()
-        return row if row and _verify_password(password, row["password"]) else None
+        row=c.execute("SELECT * FROM users WHERE username=%s AND active=1",(username.strip(),)).fetchone()
+        return row if row and _verify_password(password,row["password"]) else None
 
 
 def change_password(username, old_password, new_password):
@@ -1211,9 +1137,7 @@ def create_user(username,password,role,full_name="",student_roll_no=None,actor="
             s=c.execute("SELECT * FROM students WHERE roll_no=%s AND department='CSD'",(student_roll_no,)).fetchone()
             if not s: raise ValueError("Student roll number was not found in CSD")
             full_name=s["name"]
-        pw_hash = _hash_password(password)
-        c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)",(username,pw_hash,role,student_roll_no,full_name.strip()))
-        _save_custom_user_backup(username, pw_hash, role, full_name.strip(), student_roll_no)
+        c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)",(username,_hash_password(password),role,student_roll_no,full_name.strip()))
         audit(c,actor,"CREATE","user",f"{username} ({role})")
 
 
@@ -1223,9 +1147,7 @@ def ensure_student_login(roll_no, actor="system"):
         if not s: raise ValueError("CSD student not found")
         if c.execute("SELECT 1 FROM users WHERE student_roll_no=%s",(roll_no,)).fetchone(): raise ValueError("This student already has a login")
         username=roll_no.lower(); password=roll_no+'@CSD'
-        pw_hash = _hash_password(password)
-        c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name,must_change_password) VALUES(%s,%s,'STUDENT',%s,%s,1)",(username,pw_hash,roll_no,s["name"]))
-        _save_custom_user_backup(username, pw_hash, "STUDENT", s["name"], roll_no)
+        c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name,must_change_password) VALUES(%s,%s,'STUDENT',%s,%s,1)",(username,_hash_password(password),roll_no,s["name"]))
         audit(c,actor,"CREATE","student_login",roll_no)
         return username,password
 
