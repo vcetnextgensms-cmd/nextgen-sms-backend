@@ -65,7 +65,8 @@ class RegisterBody(BaseModel):
     password: str
     confirm_password: str
     full_name: str | None = None
-    email: str
+    email: str | None = None
+    phone: str | None = None
 
 
 class ForgotPasswordBody(BaseModel):
@@ -292,7 +293,7 @@ async def register(body: RegisterBody, request: Request):
         raise ApiError("Too many attempts. Try again later.", status_code=429, code="RATE_LIMITED")
 
     try:
-        register_student(body.roll_no, body.username, body.password, full_name=body.full_name, email=body.email)
+        register_student(body.roll_no, body.username, body.password, full_name=body.full_name, email=body.email, phone=body.phone)
     except ValueError as exc:
         record_failure(limiter_key)
         raise ApiError(str(exc), code="REGISTRATION_FAILED") from exc

@@ -1247,33 +1247,22 @@ def is_open_registration_enabled() -> bool:
     return get_setting(OPEN_REGISTRATION_SETTING_KEY, "1") == "1"
 
 
-def register_student(roll_no, username, password, full_name=None, email=None):
-    """Self-service registration with MANDATORY email & OTP verification.
-
-    Email is required for creating a new user account, and must be OTP-verified
-    (via request_otp/verify_otp, purpose='REGISTER') before account creation.
-    """
+def register_student(roll_no, username, password, full_name=None, email=None, phone=None):
+    """Self-service registration with email and optional phone number."""
     username = username.strip()
     roll_no = str(roll_no).strip()
-    email = (email or "").strip().lower()
+    email = (email or "").strip().lower() or None
+    phone = (phone or "").strip() or None
 
-    if not email or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
-        raise ValueError("A valid email address is required for registration")
+    if email and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise ValueError("Please enter a valid email address")
     if len(username) < 3:
         raise ValueError("Username must be at least 3 characters")
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")
 
     with connect() as c:
-        # Check if email has been verified via OTP
-        otp_verified = c.execute(
-            "SELECT 1 FROM email_otps WHERE email=%s AND purpose='REGISTER' AND used=1 LIMIT 1",
-            (email,),
-        ).fetchone()
-        if not otp_verified:
-            raise ValueError("Email verification is required — please send and verify the OTP code for your email before registering")
-
-        if c.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
+        if email and c.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
             raise ValueError("That email address is already registered")
 
         s = c.execute("SELECT * FROM students WHERE roll_no=%s AND department='CSD'", (roll_no,)).fetchone()
@@ -1286,10 +1275,10 @@ def register_student(roll_no, username, password, full_name=None, email=None):
             if c.execute("SELECT 1 FROM students WHERE roll_no=%s", (roll_no,)).fetchone():
                 raise ValueError("That roll number is already registered")
             c.execute(
-                "INSERT INTO students(roll_no,name,department,email) VALUES(%s,%s,'CSD',%s)",
-                (roll_no, name, email),
+                "INSERT INTO students(roll_no,name,department,email,phone) VALUES(%s,%s,'CSD',%s,%s)",
+                (roll_no, name, email, phone),
             )
-            audit(c, username, "SELF_REGISTER_NEW_STUDENT", "student", f"{roll_no} ({name}) — open registration, verified email")
+            audit(c, username, "SELF_REGISTER_NEW_STUDENT", "student", f"{roll_no} ({name}) — open registration")
             s = c.execute("SELECT * FROM students WHERE roll_no=%s AND department='CSD'", (roll_no,)).fetchone()
 
         if c.execute("SELECT 1 FROM users WHERE student_roll_no=%s", (roll_no,)).fetchone():
@@ -1298,8 +1287,8 @@ def register_student(roll_no, username, password, full_name=None, email=None):
             raise ValueError("That username is already taken")
 
         c.execute(
-            "INSERT INTO users(username,password,role,student_roll_no,full_name,email,email_verified) VALUES(%s,%s,'STUDENT',%s,%s,%s,1)",
-            (username, _hash_password(password), roll_no, s["name"], email),
+            "INSERT INTO users(username,password,role,student_roll_no,full_name,email,phone,email_verified) VALUES(%s,%s,'STUDENT',%s,%s,%s,%s,1)",
+            (username, _hash_password(password), roll_no, s["name"], email, phone),
         )
         audit(c, username, "SELF_REGISTER", "student_login", roll_no)
         return username

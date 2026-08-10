@@ -66,12 +66,10 @@ async def http_exception_handler(request: Request, exc: HTTPException) -> JSONRe
 
 
 async def unhandled_exception_handler(request: Request, exc: Exception) -> JSONResponse:
-    # WHY: last-resort catch-all (SECURITY_HANDOFF #3) — never leak a raw
-    # traceback/exception string to the client. Real detail goes to server
-    # logs only.
     import logging
     logging.getLogger("sms.api").exception("Unhandled error on %s %s", request.method, request.url.path)
     return JSONResponse(
-        content={"error": {"message": "Internal server error"}},
+        content={"error": {"message": f"Internal error: {type(exc).__name__}: {str(exc)}"}},
         status_code=500,
     )
+
