@@ -529,7 +529,7 @@ def faculty_teaching_hours(faculty_username=None):
         if faculty_username:
             sql += " WHERE a.faculty_username=%s"
             args.append(faculty_username)
-        sql += " GROUP BY a.faculty_username ORDER BY teaching_hours DESC"
+        sql += " GROUP BY a.faculty_username, u.full_name ORDER BY teaching_hours DESC"
         return c.execute(sql, args).fetchall()
 
 

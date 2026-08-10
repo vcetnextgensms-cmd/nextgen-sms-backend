@@ -23,8 +23,8 @@ router = APIRouter(prefix="/api/faculty", tags=["faculty"])
 
 
 def _require_hod(user: CurrentUser):
-    if user.role != "HOD":
-        raise ApiError("HOD access only", 403, "FORBIDDEN")
+    if user.role not in ("HOD", "ADMIN"):
+        raise ApiError("HOD or Admin access required", 403, "FORBIDDEN")
 
 
 @router.get("")
