@@ -5,5 +5,12 @@
     "role": "FACULTY",
     "full_name": "N NAVEEN KUMAR",
     "student_roll_no": null
+  },
+  {
+    "username": "Divya",
+    "password": "pbkdf2_sha256$200000$af080f138df29b9e9d92f001a8fdd82e$f0383669a3c4d9e6465d17639c089d9ac2386aa6e61d83f4e717a7c585950d89",
+    "role": "FACULTY",
+    "full_name": "Divya",
+    "student_roll_no": null
   }
 ]
