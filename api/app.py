@@ -46,7 +46,6 @@ allowed_origins_list = [
     "http://localhost:5173",
     "http://127.0.0.1:5173",
     "http://localhost:3000",
-    "https://nextgen-sms-frontend.vercel.app",
 ]
 allowed_origins_list.extend(_split_env(os.environ.get("ALLOWED_ORIGINS")))
 allowed_origins_list.extend(_split_env(os.environ.get("FRONTEND_ORIGIN")))

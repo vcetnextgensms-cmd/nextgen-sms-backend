@@ -508,33 +508,85 @@ class SQLiteConnectionWrapper:
             self.commit()
 
 
+import json
+
+CUSTOM_USERS_FILE = Path(__file__).parent / "custom_users.json"
+
+
+def _save_custom_user_backup(username: str, password_hash: str, role: str, full_name: str = "", student_roll_no: str | None = None):
+    users = []
+    if CUSTOM_USERS_FILE.exists():
+        try:
+            with open(CUSTOM_USERS_FILE, "r", encoding="utf-8") as f:
+                users = json.load(f)
+        except Exception:
+            users = []
+    users = [u for u in users if u.get("username") != username]
+    users.append({
+        "username": username,
+        "password": password_hash,
+        "role": role,
+        "full_name": full_name,
+        "student_roll_no": student_roll_no,
+    })
+    try:
+        with open(CUSTOM_USERS_FILE, "w", encoding="utf-8") as f:
+            json.dump(users, f, indent=2)
+    except Exception:
+        pass
+
+
+def _restore_custom_users(c):
+    if not CUSTOM_USERS_FILE.exists():
+        return
+    try:
+        with open(CUSTOM_USERS_FILE, "r", encoding="utf-8") as f:
+            users = json.load(f)
+        for u in users:
+            roll_no = u.get("student_roll_no")
+            if roll_no:
+                if not c.execute("SELECT 1 FROM students WHERE roll_no=%s", (roll_no,)).fetchone():
+                    c.execute(
+                        "INSERT IGNORE INTO students(roll_no, name, department) VALUES(%s, %s, 'CSD')",
+                        (roll_no, u.get("full_name") or u["username"]),
+                    )
+            if not c.execute("SELECT 1 FROM users WHERE username=%s", (u["username"],)).fetchone():
+                c.execute(
+                    "INSERT INTO users(username,password,role,student_roll_no,full_name,email) VALUES(%s,%s,%s,%s,%s,%s)",
+                    (u["username"], u["password"], u["role"], roll_no, u.get("full_name", ""), u.get("email")),
+                )
+    except Exception as e:
+        print(f"[DATABASE RECOVERY] Warning restoring custom users: {e}")
+
+
 def _new_raw_connection(target_db: str):
     """Open a fresh MySQL connection, or fallback to SQLite if MySQL is unreachable."""
-    try:
-        if MYSQL_DRIVER == "mysql.connector":
-            return mysql.connector.connect(
-                host=MYSQL_HOST,
-                port=MYSQL_PORT,
-                user=MYSQL_USER,
-                password=MYSQL_PASSWORD,
-                database=target_db,
-                autocommit=True,
-                connection_timeout=10,
-                use_pure=False,
-            )
-        elif MYSQL_DRIVER == "pymysql":
-            return pymysql.connect(
-                host=MYSQL_HOST,
-                port=MYSQL_PORT,
-                user=MYSQL_USER,
-                password=MYSQL_PASSWORD,
-                database=target_db,
-                autocommit=True,
-                charset="utf8mb4",
-                connect_timeout=10,
-            )
-    except Exception:
-        return SQLiteConnectionWrapper("sms.db")
+    if MYSQL_DRIVER:
+        try:
+            if MYSQL_DRIVER == "mysql.connector":
+                return mysql.connector.connect(
+                    host=MYSQL_HOST,
+                    port=MYSQL_PORT,
+                    user=MYSQL_USER,
+                    password=MYSQL_PASSWORD,
+                    database=target_db,
+                    autocommit=False,
+                    connection_timeout=10,
+                    use_pure=False,
+                )
+            elif MYSQL_DRIVER == "pymysql":
+                return pymysql.connect(
+                    host=MYSQL_HOST,
+                    port=MYSQL_PORT,
+                    user=MYSQL_USER,
+                    password=MYSQL_PASSWORD,
+                    database=target_db,
+                    autocommit=False,
+                    charset="utf8mb4",
+                    connect_timeout=10,
+                )
+        except Exception:
+            pass
     return SQLiteConnectionWrapper("sms.db")
 
 
@@ -548,12 +600,12 @@ def connect(db_name=None):
     commits/rolls back but no longer closes the underlying socket.
     """
     if DB_PROXY_URL:
-        try:
-            proxy_conn = HTTPConnectionWrapper()
-            proxy_conn._ensure_session()
-            return proxy_conn
-        except Exception as exc:
-            print(f"[DB Proxy Warning] DB_PROXY_URL unreachable ({exc}). Falling back to local database.")
+        # Campus MySQL not directly reachable (e.g. Render) — route through
+        # db_proxy over HTTPS instead. db_name override is intentionally
+        # NOT supported here: the proxy is hardcoded to its own
+        # MYSQL_DATABASE, so a compromised backend can't make it connect
+        # to an arbitrary database on the campus server.
+        return HTTPConnectionWrapper()
 
     _ensure_db_once()
     target_db = db_name if db_name is not None else MYSQL_DATABASE
@@ -764,10 +816,6 @@ def init_db(db_name=None):
         if "email_verified" not in existing_user_cols:
             c.execute("ALTER TABLE users ADD COLUMN email_verified TINYINT(1) NOT NULL DEFAULT 0 CHECK(email_verified IN (0,1))")
 
-        # Clear all student accounts and student records so the database is 100% clean
-        c.execute("DELETE FROM users WHERE role='STUDENT'")
-        c.execute("DELETE FROM students")
-
         c.execute("""
         CREATE TABLE IF NOT EXISTS attendance(
             id INT AUTO_INCREMENT PRIMARY KEY,
@@ -950,9 +998,14 @@ def init_db(db_name=None):
             attempts INT NOT NULL DEFAULT 0,
             created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
             expires_at DATETIME NOT NULL,
-            used TINYINT(1) NOT NULL DEFAULT 0 CHECK(used IN (0,1))
+            used TINYINT(1) NOT NULL DEFAULT 0 CHECK(used IN (0,1)),
+            verified TINYINT(1) NOT NULL DEFAULT 0 CHECK(verified IN (0,1,2))
         ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4;
         """)
+
+        existing_otp_cols = {row["Field"] if "Field" in row else row["name"] for row in c.execute("SHOW COLUMNS FROM email_otps").fetchall()}
+        if "verified" not in existing_otp_cols:
+            c.execute("ALTER TABLE email_otps ADD COLUMN verified TINYINT(1) NOT NULL DEFAULT 0")
 
         c.execute("""
         CREATE TABLE IF NOT EXISTS problem_reports(
@@ -1027,16 +1080,34 @@ def init_db(db_name=None):
             except Exception:
                 pass
 
-        # Seed default admin user
-        defaults=[("admin","admin123","HOD",None,"CSD Head of Department")]
-        for username,password,role,roll,full_name in defaults:
-            if not c.execute("SELECT 1 FROM users WHERE username=%s",(username,)).fetchone():
-                c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)",(username,_hash_password(password),role,roll,full_name))
+        # Seed default admin & faculty users
+        defaults = [
+            ("admin", "admin123", "HOD", None, "CSD Head of Department"),
+            ("faculty1", "faculty123", "FACULTY", None, "N NAVEEN KUMAR"),
+            ("faculty2", "faculty123", "FACULTY", None, "Faculty Member 2"),
+            ("faculty_csd", "faculty123", "FACULTY", None, "CSD Faculty Coordinator"),
+            ("Naveen", "naveen@786", "FACULTY", None, "N NAVEEN KUMAR"),
+            ("Divya", "divya@11", "FACULTY", None, "Divya"),
+            ("Srikanth", "srikanth@123", "FACULTY", None, "Srikanth"),
+        ]
+        for username, password, role, roll, full_name in defaults:
+            if not c.execute("SELECT 1 FROM users WHERE username=%s", (username,)).fetchone():
+                c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)", (username, _hash_password(password), role, roll, full_name))
+            elif username == "Naveen":
+                c.execute("UPDATE users SET password=%s WHERE username='Naveen'", (_hash_password("naveen@786"),))
+            elif username == "Divya":
+                c.execute("UPDATE users SET password=%s WHERE username='Divya'", (_hash_password("divya@11"),))
+            elif username == "Srikanth":
+                c.execute("UPDATE users SET password=%s WHERE username='Srikanth'", (_hash_password("srikanth@123"),))
+        c.execute("UPDATE users SET password=%s WHERE username='faculty1'", (_hash_password("naveen@786"),))
+
+        _restore_custom_users(c)
+
         c.execute("UPDATE users SET department='CSD', designation='Head of Department' WHERE username='admin' AND department IS NULL")
         for row in c.execute("SELECT id,password FROM users").fetchall():
             if not row["password"].startswith("pbkdf2_sha256$"):
                 c.execute("UPDATE users SET password=%s WHERE id=%s",(_hash_password(row["password"]),row["id"]))
-        for key,value in [("institution_name","VCET CSD Student Management System"),("attendance_threshold","75"),("academic_year","2024-25"),("department","CSD")]:
+        for key,value in [("institution_name","VCET CSD Student Management System"),("attendance_threshold","75"),("academic_year","2024-25"),("department","CSD"),("open_student_registration","1")]:
             c.execute("INSERT IGNORE INTO settings(`key`,`value`) VALUES(%s,%s)",(key,value))
         for k, v in [
             ("sms_enabled", "1"),
@@ -1116,9 +1187,30 @@ def get_conn():
 
 
 def auth(username, password):
+    u = username.strip()
+    if not u or not password:
+        return None
     with connect() as c:
-        row=c.execute("SELECT * FROM users WHERE username=%s AND active=1",(username.strip(),)).fetchone()
-        return row if row and _verify_password(password,row["password"]) else None
+        rows = c.execute(
+            """SELECT * FROM users 
+               WHERE (username = %s 
+                      OR (student_roll_no IS NOT NULL AND student_roll_no != '' AND student_roll_no = %s)
+                      OR (email IS NOT NULL AND email != '' AND email = %s))
+               AND active = 1""",
+            (u, u, u),
+        ).fetchall()
+        if not rows:
+            rows = c.execute(
+                """SELECT * FROM users 
+                   WHERE (LOWER(full_name) = LOWER(%s) 
+                          OR (full_name LIKE %s AND LENGTH(%s) >= 3))
+                   AND active = 1""",
+                (u, f"%{u}%", u),
+            ).fetchall()
+        for row in rows:
+            if _verify_password(password, row["password"]):
+                return row
+        return None
 
 
 def change_password(username, old_password, new_password):
@@ -1141,7 +1233,9 @@ def create_user(username,password,role,full_name="",student_roll_no=None,actor="
             s=c.execute("SELECT * FROM students WHERE roll_no=%s AND department='CSD'",(student_roll_no,)).fetchone()
             if not s: raise ValueError("Student roll number was not found in CSD")
             full_name=s["name"]
-        c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)",(username,_hash_password(password),role,student_roll_no,full_name.strip()))
+        pw_hash = _hash_password(password)
+        c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name) VALUES(%s,%s,%s,%s,%s)",(username,pw_hash,role,student_roll_no,full_name.strip()))
+        _save_custom_user_backup(username, pw_hash, role, full_name.strip(), student_roll_no)
         audit(c,actor,"CREATE","user",f"{username} ({role})")
 
 
@@ -1151,7 +1245,10 @@ def ensure_student_login(roll_no, actor="system"):
         if not s: raise ValueError("CSD student not found")
         if c.execute("SELECT 1 FROM users WHERE student_roll_no=%s",(roll_no,)).fetchone(): raise ValueError("This student already has a login")
         username=roll_no.lower(); password=roll_no+'@CSD'
-        c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name,must_change_password) VALUES(%s,%s,'STUDENT',%s,%s,1)",(username,_hash_password(password),roll_no,s["name"]))
+        pw_hash = _hash_password(password)
+        email = s.get("email") or None
+        c.execute("INSERT INTO users(username,password,role,student_roll_no,full_name,email,must_change_password) VALUES(%s,%s,'STUDENT',%s,%s,%s,1)",(username,pw_hash,roll_no,s["name"],email))
+        _save_custom_user_backup(username, pw_hash, "STUDENT", s["name"], roll_no)
         audit(c,actor,"CREATE","student_login",roll_no)
         return username,password
 
@@ -1173,22 +1270,21 @@ def is_open_registration_enabled() -> bool:
     return get_setting(OPEN_REGISTRATION_SETTING_KEY, "1") == "1"
 
 
-def register_student(roll_no, username, password, full_name=None, email=None, phone=None):
-    """Self-service registration with email and optional phone number."""
+def register_student(roll_no, username, password, full_name=None, email=None):
+    """Self-service student registration."""
     username = username.strip()
     roll_no = str(roll_no).strip()
-    email = (email or "").strip().lower() or None
-    phone = (phone or "").strip() or None
+    email = (email or "").strip().lower()
 
-    if email and not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
-        raise ValueError("Please enter a valid email address")
+    if not email or not re.fullmatch(r"[^\s@]+@[^\s@]+\.[^\s@]+", email):
+        raise ValueError("A valid email address is required for registration")
     if len(username) < 3:
         raise ValueError("Username must be at least 3 characters")
     if len(password) < 8:
         raise ValueError("Password must be at least 8 characters")
 
     with connect() as c:
-        if email and c.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
+        if c.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
             raise ValueError("That email address is already registered")
 
         s = c.execute("SELECT * FROM students WHERE roll_no=%s AND department='CSD'", (roll_no,)).fetchone()
@@ -1201,8 +1297,8 @@ def register_student(roll_no, username, password, full_name=None, email=None, ph
             if c.execute("SELECT 1 FROM students WHERE roll_no=%s", (roll_no,)).fetchone():
                 raise ValueError("That roll number is already registered")
             c.execute(
-                "INSERT INTO students(roll_no,name,department,email,phone) VALUES(%s,%s,'CSD',%s,%s)",
-                (roll_no, name, email, phone),
+                "INSERT INTO students(roll_no,name,department,email) VALUES(%s,%s,'CSD',%s)",
+                (roll_no, name, email),
             )
             audit(c, username, "SELF_REGISTER_NEW_STUDENT", "student", f"{roll_no} ({name}) — open registration")
             s = c.execute("SELECT * FROM students WHERE roll_no=%s AND department='CSD'", (roll_no,)).fetchone()
@@ -1212,10 +1308,14 @@ def register_student(roll_no, username, password, full_name=None, email=None, ph
         if c.execute("SELECT 1 FROM users WHERE username=%s", (username,)).fetchone():
             raise ValueError("That username is already taken")
 
+        pw_hash = _hash_password(password)
+        student_name = str(full_name or "").strip() or s["name"]
         c.execute(
-            "INSERT INTO users(username,password,role,student_roll_no,full_name,email,phone,email_verified) VALUES(%s,%s,'STUDENT',%s,%s,%s,%s,1)",
-            (username, _hash_password(password), roll_no, s["name"], email, phone),
+            "INSERT INTO users(username,password,role,student_roll_no,full_name,email,email_verified) VALUES(%s,%s,'STUDENT',%s,%s,%s,1)",
+            (username, pw_hash, roll_no, student_name, email),
         )
+        c.execute("UPDATE students SET email=%s WHERE roll_no=%s AND (email IS NULL OR email = '' OR email != %s)", (email, roll_no, email))
+        _save_custom_user_backup(username, pw_hash, "STUDENT", student_name, roll_no)
         audit(c, username, "SELF_REGISTER", "student_login", roll_no)
         return username
 
@@ -1316,7 +1416,10 @@ def request_otp(email, purpose):
     email = email.strip().lower()
     code = f"{secrets.randbelow(900000) + 100000}"
 
-    now = datetime.datetime.now(datetime.timezone.utc)
+    # Use local time (not UTC) to match MySQL's CURRENT_TIMESTAMP / created_at column
+    # which is stored in the server's local timezone. Using UTC here caused expires_at
+    # to be computed 5:30 hours behind IST, making every OTP expire immediately.
+    now = datetime.datetime.now()
     cutoff = (now - datetime.timedelta(minutes=10)).strftime("%Y-%m-%d %H:%M:%S")
     expires_at = (now + datetime.timedelta(minutes=OTP_MAX_AGE_MINUTES)).strftime("%Y-%m-%d %H:%M:%S")
 
@@ -1333,12 +1436,12 @@ def request_otp(email, purpose):
         # Burn any earlier, still-unused OTP for this email+purpose so only
         # the most recently requested code is ever valid
         c.execute(
-            "UPDATE email_otps SET used=1 WHERE email=%s AND purpose=%s AND used=0",
+            "UPDATE email_otps SET used=1, verified=0 WHERE email=%s AND purpose=%s AND used=0",
             (email, purpose),
         )
         c.execute(
-            """INSERT INTO email_otps(email, purpose, code_hash, expires_at)
-               VALUES(%s, %s, %s, %s)""",
+            """INSERT INTO email_otps(email, purpose, code_hash, expires_at, verified)
+               VALUES(%s, %s, %s, %s, 0)""",
             (email, purpose, _hash_otp(email, purpose, code), expires_at),
         )
         audit(c, email, "REQUEST_OTP", purpose.lower(), email)
@@ -1363,24 +1466,32 @@ def verify_otp(email, purpose, code):
         if not row:
             raise ValueError("No pending verification code for this email — please click 'Send Verification Code'")
         if row["attempts"] >= OTP_MAX_ATTEMPTS:
-            c.execute("UPDATE email_otps SET used=1 WHERE id=%s", (row["id"],))
+            c.execute("UPDATE email_otps SET used=1, verified=0 WHERE id=%s", (row["id"],))
             raise ValueError("Too many incorrect attempts — OTP security locked. Please click 'Resend New OTP'")
 
-        now_str = datetime.datetime.now(datetime.timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-        exp_str = str(row["expires_at"])
-        if exp_str < now_str:
-            c.execute("UPDATE email_otps SET used=1 WHERE id=%s", (row["id"],))
+        exp_val = row["expires_at"]
+        if isinstance(exp_val, datetime.datetime):
+            exp_dt = exp_val
+        else:
+            exp_str_clean = str(exp_val).split(".")[0]
+            try:
+                exp_dt = datetime.datetime.strptime(exp_str_clean, "%Y-%m-%d %H:%M:%S")
+            except Exception:
+                exp_dt = datetime.datetime.now() - datetime.timedelta(seconds=1)
+
+        if exp_dt < datetime.datetime.now():
+            c.execute("UPDATE email_otps SET used=1, verified=0 WHERE id=%s", (row["id"],))
             raise ValueError("This 6-digit OTP code has expired after 10 minutes. Please click 'Resend New OTP' to receive a fresh code.")
 
         if row["code_hash"] != _hash_otp(email, purpose, code):
             c.execute("UPDATE email_otps SET attempts=attempts+1 WHERE id=%s", (row["id"],))
             remaining = OTP_MAX_ATTEMPTS - (row["attempts"] + 1)
             if remaining <= 0:
-                c.execute("UPDATE email_otps SET used=1 WHERE id=%s", (row["id"],))
+                c.execute("UPDATE email_otps SET used=1, verified=0 WHERE id=%s", (row["id"],))
                 raise ValueError("Too many incorrect attempts — OTP security locked. Please click 'Resend New OTP'")
             raise ValueError(f"Incorrect OTP code ({remaining} attempt(s) remaining)")
 
-        c.execute("UPDATE email_otps SET used=1 WHERE id=%s", (row["id"],))
+        c.execute("UPDATE email_otps SET used=1, verified=1 WHERE id=%s", (row["id"],))
         audit(c, email, "VERIFY_OTP", purpose.lower(), email)
         return True
 

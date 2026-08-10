@@ -24,7 +24,10 @@ _orig_getaddrinfo = socket.getaddrinfo
 
 def _ipv4_only_getaddrinfo(host, port, family=0, type=0, proto=0, flags=0):
     if isinstance(host, str) and ("gmail" in host.lower() or "smtp" in host.lower()):
-        family = socket.AF_INET
+        try:
+            return _orig_getaddrinfo(host, port, socket.AF_INET, type, proto, flags)
+        except socket.gaierror:
+            pass
     return _orig_getaddrinfo(host, port, family, type, proto, flags)
 
 socket.getaddrinfo = _ipv4_only_getaddrinfo
@@ -43,11 +46,15 @@ def get_smtp_config():
         load_dotenv()
     except ImportError:
         pass
-    host = os.environ.get("SMTP_HOST", "").strip()
+    host = os.environ.get("SMTP_HOST", "smtp.gmail.com").strip()
     port = int(os.environ.get("SMTP_PORT", "587"))
-    username = os.environ.get("SMTP_USERNAME", "").strip()
-    password = os.environ.get("SMTP_PASSWORD", "").strip()
-    from_email = os.environ.get("SMTP_FROM_EMAIL", "").strip() or username
+    username = os.environ.get("SMTP_USERNAME", "thirumala7240@gmail.com").strip()
+    password = os.environ.get("SMTP_PASSWORD", "aacs xmqn ynuh vbtw").strip()
+    # Google App Passwords are shown in 4-character groups with spaces (e.g. 'aacs xmqn ynuh vbtw').
+    # Strip spaces for Gmail SMTP so smtplib doesn't fail authentication.
+    if "gmail" in host.lower() or "gmail" in username.lower():
+        password = password.replace(" ", "")
+    from_email = os.environ.get("SMTP_FROM_EMAIL", "thirumala7240@gmail.com").strip() or username
     from_name = os.environ.get("SMTP_FROM_NAME", "VCET CSD SMS").strip()
     use_ssl = os.environ.get("SMTP_USE_SSL", "0") == "1"
     use_tls = os.environ.get("SMTP_USE_TLS", "1") == "1"

@@ -284,6 +284,8 @@ async def student_update(student_id: int, body: StudentBody, user: CurrentUser =
                    current_semester_id=?,updated_at=CURRENT_TIMESTAMP WHERE id=?""",
                 (*[data[k] for k in STUDENT_DB_KEYS], body.current_semester_id, student_id),
             )
+            if data.get("email"):
+                c.execute("UPDATE users SET email=? WHERE student_roll_no=?", (data["email"], data["roll_no"]))
             audit(c, user.username, "UPDATE", "student", data["roll_no"])
         return ok({"id": student_id, "created_credentials": None})
     except ValueError as e:

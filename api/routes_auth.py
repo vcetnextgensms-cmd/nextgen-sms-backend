@@ -65,8 +65,7 @@ class RegisterBody(BaseModel):
     password: str
     confirm_password: str
     full_name: str | None = None
-    email: str | None = None
-    phone: str | None = None
+    email: str
 
 
 class ForgotPasswordBody(BaseModel):
@@ -293,7 +292,7 @@ async def register(body: RegisterBody, request: Request):
         raise ApiError("Too many attempts. Try again later.", status_code=429, code="RATE_LIMITED")
 
     try:
-        register_student(body.roll_no, body.username, body.password, full_name=body.full_name, email=body.email, phone=body.phone)
+        register_student(body.roll_no, body.username, body.password, full_name=body.full_name, email=body.email)
     except ValueError as exc:
         record_failure(limiter_key)
         raise ApiError(str(exc), code="REGISTRATION_FAILED") from exc
@@ -373,21 +372,51 @@ async def send_otp(body: SendOtpBody, request: Request):
             record_success(limiter_key)  # not a failure of the requester's — just no account to email
             return ok({"message": "If that email is registered, a verification code has been sent."})
 
-    code = request_otp(email, purpose)
+    if purpose == "REGISTER":
+        with connect() as c:
+            if c.execute("SELECT 1 FROM users WHERE email=%s", (email,)).fetchone():
+                raise ApiError("That email address is already registered to an existing account", code="EMAIL_TAKEN")
 
+    code = request_otp(email, purpose)
+    is_dev = os.environ.get("SMS_ENV", "development").strip().lower() == "development"
+
+    email_sent = False
+    email_error = None
     try:
         email_service.send_otp_email(email, code, purpose)
-        print(f"[OTP] Real OTP email sent for {purpose} to {email}")
+        email_sent = True
+        print(f"[OTP] ✅ Email sent for {purpose} to {email}")
     except email_service.EmailNotConfiguredError as exc:
-        raise ApiError("Email service is not configured in .env. Please set SMTP_HOST, SMTP_USERNAME, and SMTP_PASSWORD.", status_code=503, code="EMAIL_NOT_CONFIGURED") from exc
+        email_error = str(exc)
+        print(f"[OTP] ⚠️  Email NOT configured. OTP for {email}: {code}")
     except Exception as exc:
-        print(f"[OTP Error] Failed to send email via SMTP ({exc}).")
-        record_failure(limiter_key)
-        raise ApiError(f"Could not send verification email ({exc}). Please verify SMTP settings.", status_code=502, code="EMAIL_SEND_FAILED") from exc
-
+        email_error = str(exc)
+        print(f"[OTP] ⚠️  Email send FAILED ({exc}). OTP for {email}: {code}")
 
     record_success(limiter_key)
-    return ok({"message": "Verification code sent to your email. It expires in 10 minutes."})
+
+    # In development mode, always include the OTP in the response so admins
+    # can copy it from the browser console/network tab even if email fails.
+    # In production this field is never returned.
+    resp_data: dict = {"message": "Verification code sent to your email. It expires in 10 minutes."}
+    if is_dev:
+        resp_data["dev_otp"] = code
+        resp_data["dev_email_sent"] = email_sent
+        if email_error:
+            resp_data["dev_email_error"] = email_error
+        print(f"[OTP] 🔑 DEV MODE — OTP for {email}: {code}  (email_sent={email_sent})")
+
+    if not email_sent and not is_dev:
+        raise ApiError(
+            "Could not send verification email. Please check your email address or contact the administrator.",
+            status_code=503,
+            code="EMAIL_SEND_FAILED",
+        )
+
+    return ok(resp_data)
+
+
+
 
 
 @router.post("/verify-otp")
